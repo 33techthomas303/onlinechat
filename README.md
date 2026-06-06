@@ -1,2 +1,287 @@
-# onlinechat
-onlinechat
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Live Chat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #18191c; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        /* Login Screen Overlay */
+        #login-screen { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; z-index: 10; }
+        .login-box { background: #2f3136; padding: 35px; border-radius: 12px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.5); width: 90%; max-width: 400px; }
+        .login-box h2 { margin-bottom: 8px; color: #fff; }
+        .login-box p { color: #b9bbbe; font-size: 14px; margin-bottom: 20px; }
+        .login-box input { width: 100%; padding: 12px; border: none; border-radius: 6px; background: #202225; color: #fff; margin-bottom: 15px; font-size: 16px; outline: none; text-align: center; }
+        .login-box input:focus { border: 1px solid #5865f2; }
+        
+        /* Sub-panel for Private Actions */
+        #private-panel { display: block; background: #202225; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: left; }
+        #private-panel label { font-size: 12px; color: #b9bbbe; font-weight: bold; display: block; margin-bottom: 5px; }
+        .sub-toggle { display: flex; gap: 8px; margin-top: 10px; }
+        .sub-btn { flex: 1; background: #3a3c43; color: #ccc; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .sub-btn.selected { background: #5865f2; color: #fff; }
+
+        /* Error Box */
+        #error-msg { color: #f04747; font-size: 14px; font-weight: bold; margin-bottom: 15px; min-height: 20px; line-height: 1.4; }
+
+        .login-box button.submit-btn { background: #5865f2; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; transition: background 0.2s; }
+        .login-box button.submit-btn:hover { background: #4752c4; }
+
+        /* Main Chat Layout */
+        #chat-container { width: 100%; max-width: 800px; height: 90vh; background: #36393f; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 36px rgba(0,0,0,0.4); display: none; }
+        #chat-box { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; background: #36393f; }
+        
+        /* Bubble Formatting structures */
+        .message-wrapper { display: flex; flex-direction: column; max-width: 70%; width: fit-content; }
+        .username-label { font-size: 12px; color: #b9bbbe; margin-bottom: 4px; padding: 0 6px; font-weight: 600; }
+        .message-bubble { padding: 12px 16px; border-radius: 16px; font-size: 15px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+
+        /* LEFT SIDE: Other Users */
+        .msg-other { align-self: flex-start; }
+        .msg-other .message-bubble { background: #2f3136; color: #dcddde; border-top-left-radius: 2px; }
+
+        /* RIGHT SIDE: Active Logged In User */
+        .msg-me { align-self: flex-end; }
+        .msg-me .username-label { text-align: right; color: #00aff4; }
+        .msg-me .message-bubble { background: #00aff4; color: #fff; border-top-right-radius: 2px; }
+
+        /* Input Deck Frame */
+        #input-area { background: #40444b; padding: 20px; display: flex; gap: 12px; align-items: flex-end; }
+        #message-input { flex: 1; background: #2f3136; color: #dcddde; border: none; border-radius: 8px; padding: 14px; font-size: 15px; resize: none; max-height: 150px; height: 48px; overflow-y: auto; outline: none; line-height: 1.4; }
+        #send-btn { background: #5865f2; border: none; color: white; padding: 0 24px; border-radius: 8px; font-weight: bold; cursor: pointer; height: 48px; font-size: 15px; transition: background 0.2s; }
+        #send-btn:hover { background: #4752c4; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <div class="login-box">
+            <h2>Join Chatroom</h2>
+            <p>Pick a username and configure your room.</p>
+            
+            <input type="text" id="username-input" placeholder="Type a username..." maxlength="25" autofocus>
+
+            <div id="private-panel">
+                <label>Private Room Code:</label>
+                <input type="text" id="private-code-input" placeholder="Enter room code..." maxlength="30" style="margin-bottom:0;">
+                <div class="sub-toggle">
+                    <button type="button" id="sub-create" class="sub-btn selected" onclick="setPrivateAction('create')">Create Server</button>
+                    <button type="button" id="sub-join" class="sub-btn" onclick="setPrivateAction('join')">Join Server</button>
+                </div>
+            </div>
+
+            <div id="error-msg"></div> 
+            <button class="submit-btn" onclick="joinChat()">Enter Room</button>
+        </div>
+    </div>
+
+    <div id="chat-container">
+        <div id="chat-box"></div>
+        <div id="input-area">
+            <textarea id="message-input" placeholder="Type a message... (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
+            <button id="send-btn" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let storageURL = "";
+        let myUsername = "";
+        let privateAction = "create";
+        let knownMessageSignatures = new Set();
+
+        const loginScreen = document.getElementById('login-screen');
+        const chatContainer = document.getElementById('chat-container');
+        const usernameInput = document.getElementById('username-input');
+        const privateCodeInput = document.getElementById('private-code-input');
+        const errorMsg = document.getElementById('error-msg');
+        const chatBox = document.getElementById('chat-box');
+        const messageInput = document.getElementById('message-input');
+
+        function setPrivateAction(action) {
+            privateAction = action;
+            if (action === 'create') {
+                document.getElementById('sub-create').classList.add('selected');
+                document.getElementById('sub-join').classList.remove('selected');
+            } else {
+                document.getElementById('sub-create').classList.remove('selected');
+                document.getElementById('sub-join').classList.add('selected');
+            }
+        }
+
+        usernameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinChat(); });
+        privateCodeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinChat(); });
+        
+        messageInput.addEventListener('keydown', (e) => { 
+            if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    return; // Shift+Enter: drop down a line safely
+                } else {
+                    e.preventDefault(); 
+                    sendMessage(); 
+                }
+            } 
+        });
+
+        function joinChat() {
+            myUsername = usernameInput.value.trim();
+            const rawCode = privateCodeInput.value.trim().toLowerCase().replace(/[^a-zA-Z0-9_-]/g, "");
+            errorMsg.textContent = "";
+            
+            if (myUsername === "") {
+                errorMsg.textContent = "Username cannot be blank!";
+                return;
+            }
+            if (myUsername.toLowerCase() === "system notice") {
+                errorMsg.textContent = "That username is reserved!";
+                return;
+            }
+            if (rawCode === "") {
+                errorMsg.textContent = "Please type a private room code!";
+                return;
+            }
+            
+            // Setting up a high-speed cross-network cloud database link
+            storageURL = `https://kvdb.io/MN86yv966EwGgC9j3K7m7A/room_${rawCode}`;
+            errorMsg.style.color = "#43b581";
+            errorMsg.textContent = "Connecting to global network...";
+
+            if (privateAction === 'join') {
+                // Access global cloud to verify if room data stream actually exists
+                fetch(storageURL)
+                .then(res => {
+                    if (res.status === 404) {
+                        errorMsg.style.color = "#f04747";
+                        errorMsg.textContent = "Could not find an active server with that code.";
+                    } else {
+                        return res.text();
+                    }
+                })
+                .then(textData => {
+                    if (!textData) return;
+                    try {
+                        const parsed = JSON.parse(textData);
+                        // Block empty tracking arrays from acting as fake servers
+                        if (Array.isArray(parsed) && parsed.length === 0) {
+                            errorMsg.style.color = "#f04747";
+                            errorMsg.textContent = "Could not find an active server with that code.";
+                        } else {
+                            enterTheRoom();
+                        }
+                    } catch(e) {
+                        enterTheRoom();
+                    }
+                })
+                .catch(() => {
+                    errorMsg.style.color = "#f04747";
+                    errorMsg.textContent = "Could not find an active server with that code.";
+                });
+            } else {
+                // Action is 'CREATE': Provision room and push initial initialization structural parameters
+                const welcomeMsg = [{ sender: "System Notice", text: "Room created! Share your code to start chatting.", time: Date.now() }];
+                fetch(storageURL, { method: 'PUT', body: JSON.stringify(welcomeMsg) })
+                .then(() => enterTheRoom())
+                .catch(() => enterTheRoom());
+            }
+        }
+
+        function enterTheRoom() {
+            loginScreen.style.display = 'none';
+            chatContainer.style.display = 'flex';
+            messageInput.focus();
+
+            // Run high-speed frame data check loop set to 1.2 seconds
+            fetchMessages();
+            setInterval(fetchMessages, 1200);
+        }
+
+        function fetchMessages() {
+            fetch(storageURL)
+            .then(res => res.text())
+            .then(textData => {
+                let messages = [];
+                try {
+                    messages = JSON.parse(textData);
+                } catch(e) {
+                    messages = [];
+                }
+
+                if (!Array.isArray(messages)) return;
+                
+                messages.forEach(msg => {
+                    const msgSignature = `${msg.sender}_${msg.time}`;
+                    if (!knownMessageSignatures.has(msgSignature)) {
+                        knownMessageSignatures.add(msgSignature);
+                        
+                        if (msg.sender.toLowerCase() === myUsername.toLowerCase()) {
+                            appendMessageBubble(msg.sender, msg.text, "me");
+                        } else {
+                            appendMessageBubble(msg.sender, msg.text, "other");
+                        }
+                    }
+                });
+            })
+            .catch(() => {});
+        }
+
+        function sendMessage() {
+            const rawText = messageInput.value.trim();
+            if (rawText === "") return;
+
+            messageInput.value = "";
+
+            fetch(storageURL)
+            .then(res => res.text())
+            .then(textData => {
+                let currentList = [];
+                try {
+                    currentList = JSON.parse(textData);
+                } catch(e) {
+                    currentList = [];
+                }
+                if (!Array.isArray(currentList)) currentList = [];
+                
+                // Limit chat history to last 50 entries to preserve performance speeds
+                if (currentList.length > 50) {
+                    currentList = currentList.slice(-50);
+                }
+
+                currentList.push({
+                    sender: myUsername,
+                    text: rawText,
+                    time: Date.now() + Math.random()
+                });
+
+                return fetch(storageURL, {
+                    method: 'PUT',
+                    body: JSON.stringify(currentList)
+                });
+            })
+            .then(() => {
+                fetchMessages(); // Refresh message frames instantly
+            })
+            .catch(() => {});
+        }
+
+        function appendMessageBubble(user, message, side) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('message-wrapper', side === "me" ? "msg-me" : "msg-other");
+
+            const label = document.createElement('div');
+            label.classList.add('username-label');
+            label.textContent = user; 
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            bubble.textContent = message; 
+
+            wrapper.appendChild(label);
+            wrapper.appendChild(bubble);
+            chatBox.appendChild(wrapper);
+
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    </script>
+</body>
+</html>
