@@ -150,8 +150,8 @@
             if (privateAction === 'join') {
                 fetch(storageURL)
                 .then(res => {
-                    if (res.status === 404) {
-                        throw new Error("Missing");
+                    if (!res.ok) {
+                        throw new Error("Missing Server Data");
                     }
                     return res.json();
                 })
@@ -168,7 +168,6 @@
                     errorMsg.textContent = "Could not find an active server with that code.";
                 });
             } else {
-                // Initialize setup payload layout
                 const welcomeMsg = [{ sender: "System Notice", text: "Server initialized successfully. Room is ready across miles!", time: Date.now() }];
                 fetch(storageURL, { method: 'PUT', body: JSON.stringify(welcomeMsg) })
                 .then(() => enterTheRoom())
@@ -185,14 +184,16 @@
                 appendMessageBubble("System Notice", "Tell your friends to click 'Join Server' and use your exact code: " + rawRoomCode, "other");
             }
 
-            // Fire rapid listener background interval
             fetchMessages();
-            setInterval(fetchMessages, 1000);
+            setInterval(fetchMessages, 1200);
         }
 
         function fetchMessages() {
             fetch(storageURL)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) return []; // Safe return for 404/Not Found states
+                return res.json();
+            })
             .then(messages => {
                 if (!Array.isArray(messages)) return;
                 
@@ -219,7 +220,10 @@
             messageInput.value = "";
 
             fetch(storageURL)
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) return []; // Fallback if database record is fresh
+                return res.json();
+            })
             .then(currentList => {
                 let list = Array.isArray(currentList) ? currentList : [];
                 
