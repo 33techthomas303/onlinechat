@@ -91,6 +91,7 @@
         let myUsername = "";
         let privateAction = "create";
         let knownMessageSignatures = new Set();
+        let cachedMessagesList = [];
 
         const loginScreen = document.getElementById('login-screen');
         const chatContainer = document.getElementById('chat-container');
@@ -150,9 +151,7 @@
             if (privateAction === 'join') {
                 fetch(storageURL)
                 .then(res => {
-                    if (!res.ok) {
-                        throw new Error("Missing Server Data");
-                    }
+                    if (!res.ok) throw new Error();
                     return res.json();
                 })
                 .then(parsed => {
@@ -185,17 +184,19 @@
             }
 
             fetchMessages();
-            setInterval(fetchMessages, 1200);
+            setInterval(fetchMessages, 1000);
         }
 
         function fetchMessages() {
             fetch(storageURL)
             .then(res => {
-                if (!res.ok) return []; // Safe return for 404/Not Found states
+                if (!res.ok) return null;
                 return res.json();
             })
             .then(messages => {
-                if (!Array.isArray(messages)) return;
+                if (!messages || !Array.isArray(messages)) return;
+                
+                cachedMessagesList = messages; // Keep track of current array layout safely
                 
                 messages.forEach(msg => {
                     const msgSignature = `${msg.sender}_${msg.time}`;
@@ -219,28 +220,24 @@
 
             messageInput.value = "";
 
-            fetch(storageURL)
-            .then(res => {
-                if (!res.ok) return []; // Fallback if database record is fresh
-                return res.json();
-            })
-            .then(currentList => {
-                let list = Array.isArray(currentList) ? currentList : [];
-                
-                if (list.length > 60) {
-                    list = list.slice(-60);
-                }
+            // Push locally immediately to preserve snappy frontend experience
+            const newMsgObj = {
+                sender: myUsername,
+                text: rawText,
+                time: Date.now() + Math.random()
+            };
 
-                list.push({
-                    sender: myUsername,
-                    text: rawText,
-                    time: Date.now() + Math.random()
-                });
+            let list = Array.isArray(cachedMessagesList) ? [...cachedMessagesList] : [];
+            list.push(newMsgObj);
 
-                return fetch(storageURL, {
-                    method: 'PUT',
-                    body: JSON.stringify(list)
-                });
+            if (list.length > 60) {
+                list = list.slice(-60);
+            }
+
+            // Sync structural parameters directly out to the cloud database
+            fetch(storageURL, {
+                method: 'PUT',
+                body: JSON.stringify(list)
             })
             .then(() => {
                 fetchMessages();
