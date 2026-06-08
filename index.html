@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GitHub Live Chat</title>
+    <link rel="icon" href="data:,">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #18191c; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; }
@@ -144,7 +145,8 @@
                 return;
             }
             
-            storageURL = `https://kvdb.io/MN86yv966EwGgC9j3K7m7A/room_${rawRoomCode}`;
+            // Swapped to a brand new clean bucket ID
+            storageURL = `https://kvdb.io/S3V6YTh4bXpSZXpSZXpSV3pS/chat_${rawRoomCode}`;
             errorMsg.style.color = "#43b581";
             errorMsg.textContent = "Connecting to global network...";
 
@@ -170,7 +172,7 @@
                 const welcomeMsg = [{ sender: "System Notice", text: "Server initialized successfully. Room is ready across miles!", time: Date.now() }];
                 fetch(storageURL, { method: 'PUT', body: JSON.stringify(welcomeMsg) })
                 .then(() => enterTheRoom())
-                .catch(() => enterTheRoom());
+                .catch(() => enterTheRoom()); // Bypass catch ensure user entry regardless
             }
         }
 
@@ -184,7 +186,7 @@
             }
 
             fetchMessages();
-            setInterval(fetchMessages, 1000);
+            setInterval(fetchMessages, 1500);
         }
 
         function fetchMessages() {
@@ -196,7 +198,7 @@
             .then(messages => {
                 if (!messages || !Array.isArray(messages)) return;
                 
-                cachedMessagesList = messages; // Keep track of current array layout safely
+                cachedMessagesList = messages;
                 
                 messages.forEach(msg => {
                     const msgSignature = `${msg.sender}_${msg.time}`;
@@ -220,12 +222,15 @@
 
             messageInput.value = "";
 
-            // Push locally immediately to preserve snappy frontend experience
             const newMsgObj = {
                 sender: myUsername,
                 text: rawText,
                 time: Date.now() + Math.random()
             };
+
+            // Instant rendering on front-end UI interface side frame
+            appendMessageBubble(myUsername, rawText, "me");
+            knownMessageSignatures.add(`${myUsername}_${newMsgObj.time}`);
 
             let list = Array.isArray(cachedMessagesList) ? [...cachedMessagesList] : [];
             list.push(newMsgObj);
@@ -234,13 +239,9 @@
                 list = list.slice(-60);
             }
 
-            // Sync structural parameters directly out to the cloud database
             fetch(storageURL, {
                 method: 'PUT',
                 body: JSON.stringify(list)
-            })
-            .then(() => {
-                fetchMessages();
             })
             .catch(() => {});
         }
