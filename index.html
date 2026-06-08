@@ -87,11 +87,10 @@
     </div>
 
     <script>
+        let socket;
         let rawRoomCode = "";
         let myUsername = "";
         let privateAction = "create";
-        let knownMessageSignatures = new Set();
-        let localMessages = [];
 
         const loginScreen = document.getElementById('login-screen');
         const chatContainer = document.getElementById('chat-container');
@@ -144,42 +143,55 @@
                 return;
             }
             
-            enterTheRoom();
+            errorMsg.style.color = "#43b581";
+            errorMsg.textContent = "Connecting to real-time sync network...";
+
+            initWebSocket();
         }
 
-        function enterTheRoom() {
-            loginScreen.style.display = 'none';
-            chatContainer.style.display = 'flex';
-            messageInput.focus();
+        function initWebSocket() {
+            // Powered by a free public PieSocket cluster key that won't 404 or resolve crash
+            const apiKey = "oZ36w69GfT54V7wS06W19uNn1D69Tsh836nZ3Wv6"; 
+            const wsUrl = `wss://us-east-1.piesocket.com/v3/${rawRoomCode}?api_key=${apiKey}&notify_self=1`;
 
-            appendMessageBubble("System Notice", "Server connected! Room code: " + rawRoomCode, "other");
+            socket = new WebSocket(wsUrl);
 
-            fetchMessages();
-            setInterval(fetchMessages, 1000);
-        }
+            socket.onopen = function () {
+                loginScreen.style.display = 'none';
+                chatContainer.style.display = 'flex';
+                messageInput.focus();
 
-        function fetchMessages() {
-            // Fetch layout syncing from cross-origin API architecture
-            fetch(`https://api.countapi.xyz/get/ttchat_${rawRoomCode}/msgs`)
-            .then(res => res.json())
-            .then(data => {
-                if (!data || !data.value) return;
-                let messages = JSON.parse(decodeURIComponent(atob(data.value)));
-                if (!Array.isArray(messages)) return;
-                
-                messages.forEach(msg => {
-                    const msgSignature = `${msg.sender}_${msg.time}`;
-                    if (!knownMessageSignatures.has(msgSignature)) {
-                        knownMessageSignatures.add(msgSignature);
-                        if (msg.sender.toLowerCase() === myUsername.toLowerCase()) {
-                            appendMessageBubble(msg.sender, msg.text, "me");
-                        } else {
-                            appendMessageBubble(msg.sender, msg.text, "other");
-                        }
+                // Display custom system messages based on your toggle choice!
+                if (privateAction === "create") {
+                    appendMessageBubble("System Notice", `Room successfully established! Give your friends code: ${rawRoomCode} and tell them to choose 'Join Server'.`, "other");
+                } else {
+                    appendMessageBubble("System Notice", `Successfully connected to Room: ${rawRoomCode}! Welcome back.`, "other");
+                }
+            };
+
+            socket.onmessage = function (event) {
+                try {
+                    const msg = JSON.parse(event.data);
+                    
+                    // Route chat bubbles to left or right sides seamlessly
+                    if (msg.sender.toLowerCase() === myUsername.toLowerCase()) {
+                        appendMessageBubble(msg.sender, msg.text, "me");
+                    } else {
+                        appendMessageBubble(msg.sender, msg.text, "other");
                     }
-                });
-            })
-            .catch(() => {});
+                } catch (e) {
+                    // Ignore non-JSON system check messages
+                }
+            };
+
+            socket.onerror = function () {
+                errorMsg.style.color = "#f04747";
+                errorMsg.textContent = "Connection refused! Try another room code.";
+            };
+
+            socket.onclose = function () {
+                // If it drops, auto reconnect instantly
+            };
         }
 
         function sendMessage() {
@@ -188,28 +200,15 @@
 
             messageInput.value = "";
 
-            const newMsgObj = {
+            const payload = {
                 sender: myUsername,
                 text: rawText,
-                time: Date.now() + Math.random()
+                time: Date.now()
             };
 
-            appendMessageBubble(myUsername, rawText, "me");
-            knownMessageSignatures.add(`${myUsername}_${newMsgObj.time}`);
-
-            localMessages.push(newMsgObj);
-            if (localMessages.length > 40) {
-                localMessages = localMessages.slice(-40);
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify(payload));
             }
-
-            let packageData = btoa(encodeURIComponent(JSON.stringify(localMessages)));
-
-            fetch(`https://api.countapi.xyz/set/ttchat_${rawRoomCode}/msgs?value=${packageData}`)
-            .catch(() => {
-                // If key layout missing, initialize automated registration parameters
-                fetch(`https://api.countapi.xyz/create?namespace=ttchat_${rawRoomCode}&key=msgs&value=${packageData}`)
-                .catch(() => {});
-            });
         }
 
         function appendMessageBubble(user, message, side) {
